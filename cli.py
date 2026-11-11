@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import argparse
 import getpass
+import shutil
+import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 from argon2.exceptions import HashingError
@@ -13,6 +16,9 @@ from password_manager import Vault, VaultError, generate_password, validate_new_
 from sharing import generate_keypair, open_share, share_entry
 
 DEFAULT_VAULT = Path("vault.json")
+DEFAULT_PRIVATE_KEY = Path("local/presentation-private.pem")
+DEFAULT_PUBLIC_KEY = Path("local/presentation-public.pem")
+DEFAULT_SHARE = Path("local/presentation.share.json")
 
 
 def confirm_password(
@@ -30,11 +36,43 @@ def open_vault(path: Path) -> Vault:
     return Vault.open(path, getpass.getpass("Master password: "))
 
 
+def reset_demo_vault(path: Path, master_password: str) -> None:
+    """Reset the selected vault and local/; restore local/ if creation fails."""
+    validate_new_password(master_password)
+    vault_path = Path(path).absolute()
+    local = Path.cwd() / "local"
+    if local.is_symlink() or (local.exists() and not local.is_dir()):
+        raise VaultError("local must be a real directory, not a file or symlink")
+    had_local = local.exists()
+    with tempfile.TemporaryDirectory(
+        prefix=".pm-init-", suffix=".tmp", dir=local.parent
+    ) as temporary:
+        backup = Path(temporary) / "local"
+        try:
+            if had_local:
+                local.rename(backup)
+            local.mkdir(mode=0o700)
+            if vault_path.is_relative_to(local):
+                vault_path.parent.mkdir(parents=True, exist_ok=True)
+            Vault.create(vault_path, master_password, overwrite=True)
+        except BaseException:
+            # Also restore old demo files after an interrupted initialization.
+            if backup.exists():
+                if local.exists():
+                    shutil.rmtree(local)
+                backup.rename(local)
+            elif not had_local and local.exists():
+                shutil.rmtree(local)
+            raise
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="AES-GCM encrypted password manager")
     parser.add_argument("--vault", type=Path, default=DEFAULT_VAULT)
     commands = parser.add_subparsers(dest="command", required=True)
-    commands.add_parser("init", help="create an encrypted vault")
+    commands.add_parser(
+        "init", help="reset the selected vault and all files in local/ for a new demo"
+    )
 
     add = commands.add_parser("add", help="add or replace a credential")
     add.add_argument("service")
@@ -55,24 +93,35 @@ def build_parser() -> argparse.ArgumentParser:
     generate.add_argument("--length", type=int, default=20)
 
     keygen = commands.add_parser("keygen", help="create a teammate's RSA key pair")
-    keygen.add_argument("--private", type=Path, required=True)
-    keygen.add_argument("--public", type=Path, required=True)
+    keygen.add_argument("--private", type=Path, default=DEFAULT_PRIVATE_KEY)
+    keygen.add_argument("--public", type=Path, default=DEFAULT_PUBLIC_KEY)
     share = commands.add_parser("share", help="encrypt one entry for a teammate")
     share.add_argument("service")
-    share.add_argument("--public-key", type=Path, required=True)
-    share.add_argument("--out", type=Path, required=True)
+    share.add_argument("--public-key", type=Path, default=DEFAULT_PUBLIC_KEY)
+    share.add_argument("--out", type=Path, default=DEFAULT_SHARE)
     receive = commands.add_parser("unshare", help="display a received encrypted entry")
-    receive.add_argument("file", type=Path)
-    receive.add_argument("--private-key", type=Path, required=True)
+    receive.add_argument("file", type=Path, nargs="?", default=DEFAULT_SHARE)
+    receive.add_argument("--private-key", type=Path, default=DEFAULT_PRIVATE_KEY)
+    commands.add_parser("test", help="run the project's full test suite")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
+        if args.command == "test":
+            return subprocess.run(
+                [sys.executable, "-m", "unittest", "-v"],
+                cwd=Path(__file__).resolve().parent,
+                check=False,
+            ).returncode
         if args.command == "init":
-            Vault.create(args.vault, confirm_password("New master password: "))
-            print(f"Created encrypted vault: {args.vault}")
+            resetting = args.vault.exists()
+            master_password = confirm_password("New master password: ")
+            reset_demo_vault(args.vault, master_password)
+            action = "Reset" if resetting else "Created"
+            print(f"{action} encrypted vault: {args.vault}")
+            print("Reset local demo files: local")
             return 0
         if args.command in ("generate", "gen"):
             print(generate_password(args.length))

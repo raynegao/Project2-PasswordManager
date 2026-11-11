@@ -178,7 +178,7 @@ class VaultRegressionTests(unittest.TestCase):
         self.assertNotEqual(before["nonce"], after["nonce"])
         self.assertEqual(before["master_hash"], after["master_hash"])
 
-    def test_reinitialization_and_old_format_do_not_overwrite_data(self):
+    def test_default_create_and_unsupported_open_do_not_overwrite_data(self):
         before = self.path.read_bytes()
         with self.assertRaises(VaultError):
             Vault.create(self.path, self.master)
@@ -188,6 +188,33 @@ class VaultRegressionTests(unittest.TestCase):
         with self.assertRaisesRegex(VaultError, "Unsupported vault version"):
             Vault.open(self.path, self.master)
         self.assertEqual(old, self.path.read_bytes())
+
+    def test_explicit_reset_replaces_verifier_and_all_entries(self):
+        self.vault.add("old-account", "alice", "test-account-password")
+        previous = self.envelope()
+        other = self.path.parent / "other.vault.json"
+        other.write_bytes(b"unrelated vault data")
+        reset = Vault.create(self.path, "New demonstration master!", overwrite=True)
+        self.assertEqual(reset.entries, {})
+        self.assertEqual(Vault.open(self.path, "New demonstration master!").entries, {})
+        with self.assertRaises(AuthenticationError):
+            Vault.open(self.path, self.master)
+        current = self.envelope()
+        for field in ("master_hash", "salt", "nonce", "ciphertext"):
+            self.assertNotEqual(previous[field], current[field])
+        self.assertEqual(other.read_bytes(), b"unrelated vault data")
+
+    def test_failed_reset_keeps_existing_vault(self):
+        self.vault.add("old-account", "alice", "test-account-password")
+        before = self.path.read_bytes()
+        with patch(
+            "storage.os.replace", side_effect=OSError("simulated write failure")
+        ):
+            with self.assertRaises(OSError):
+                Vault.create(self.path, "New demonstration master!", overwrite=True)
+        self.assertEqual(before, self.path.read_bytes())
+        self.assertIn("old-account", Vault.open(self.path, self.master).entries)
+        self.assertEqual([p.name for p in self.path.parent.iterdir()], ["vault.json"])
 
     def test_unicode_credentials_add_replace_remove_and_reopen(self):
         self.vault.add("学校.example", "叶同学", "密码🔐-test-only")

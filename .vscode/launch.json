@@ -2,7 +2,7 @@
   "version": "0.2.0",
   "configurations": [
     {
-      "name": "01 创建演示密码库",
+      "name": "01 创建/重置全部演示数据",
       "type": "debugpy",
       "request": "launch",
       "program": "${workspaceFolder}/cli.py",
@@ -82,11 +82,7 @@
       "request": "launch",
       "program": "${workspaceFolder}/cli.py",
       "args": [
-        "keygen",
-        "--private",
-        "local/presentation-private.pem",
-        "--public",
-        "local/presentation-public.pem"
+        "keygen"
       ],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
@@ -101,11 +97,7 @@
         "--vault",
         "local/presentation.vault.json",
         "share",
-        "github",
-        "--public-key",
-        "local/presentation-public.pem",
-        "--out",
-        "local/presentation.share.json"
+        "github"
       ],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
@@ -117,10 +109,7 @@
       "request": "launch",
       "program": "${workspaceFolder}/cli.py",
       "args": [
-        "unshare",
-        "local/presentation.share.json",
-        "--private-key",
-        "local/presentation-private.pem"
+        "unshare"
       ],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",
@@ -159,9 +148,9 @@
       "name": "11 运行全部测试",
       "type": "debugpy",
       "request": "launch",
-      "module": "unittest",
+      "program": "${workspaceFolder}/cli.py",
       "args": [
-        "-v"
+        "test"
       ],
       "cwd": "${workspaceFolder}",
       "console": "integratedTerminal",

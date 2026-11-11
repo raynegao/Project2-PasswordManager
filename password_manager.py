@@ -159,14 +159,17 @@ class Vault:
     master_hash: str = field(repr=False)
 
     @classmethod
-    def create(cls, path: str | Path, master_password: str) -> "Vault":
+    def create(
+        cls, path: str | Path, master_password: str, *, overwrite: bool = False
+    ) -> "Vault":
+        """Create an empty vault; the demo CLI explicitly allows replacement."""
         vault_path = Path(path)
-        if vault_path.exists():
+        if vault_path.exists() and not overwrite:
             raise VaultError(f"Vault already exists: {vault_path}")
         validate_new_password(master_password)
         # PasswordHasher supplies a salt independent of the encryption salt.
         master_hash = PASSWORD_HASHER.hash(master_password)
-        _write_vault(vault_path, master_password, master_hash, {}, overwrite=False)
+        _write_vault(vault_path, master_password, master_hash, {}, overwrite=overwrite)
         return cls(vault_path, master_password, {}, master_hash)
 
     @classmethod
