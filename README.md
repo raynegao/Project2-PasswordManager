@@ -2,8 +2,8 @@
 
 ## Team
 
-- Ye Yuchen
-- Haitian Gao
+- Ye Yuchen 2023901708
+- Haitian Gao 2023903116
 
 A local Python CLI with Argon2id master-password verification, an Argon2-derived
 AES-256-GCM vault key, and a secrets password generator. Bonus A encrypts one
