@@ -1,7 +1,5 @@
 """Command-line interface for the vault and the optional public-key share."""
 
-from __future__ import annotations
-
 import argparse
 import getpass
 import shutil
@@ -32,12 +30,8 @@ def confirm_password(
     return first
 
 
-def open_vault(path: Path) -> Vault:
-    return Vault.open(path, getpass.getpass("Master password: "))
-
-
 def reset_demo_vault(path: Path, master_password: str) -> None:
-    """Reset the selected vault and local/; restore local/ if creation fails."""
+    """演示用完整重置；新库创建失败时恢复原来的local/。"""
     validate_new_password(master_password)
     vault_path = Path(path).absolute()
     local = Path.cwd() / "local"
@@ -56,7 +50,7 @@ def reset_demo_vault(path: Path, master_password: str) -> None:
                 vault_path.parent.mkdir(parents=True, exist_ok=True)
             Vault.create(vault_path, master_password, overwrite=True)
         except BaseException:
-            # Also restore old demo files after an interrupted initialization.
+            # 创建失败或按Control+C时，把临时保留的旧目录放回去。
             if backup.exists():
                 if local.exists():
                     shutil.rmtree(local)
@@ -143,7 +137,8 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Password: {entry['password']}")
             return 0
 
-        vault = open_vault(args.vault)
+        # 账号读写、分享和换主密码，都先用主密码打开同一个库。
+        vault = Vault.open(args.vault, getpass.getpass("Master password: "))
         if args.command == "add":
             if args.generate is None:
                 password = getpass.getpass("Account password: ")

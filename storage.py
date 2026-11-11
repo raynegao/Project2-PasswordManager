@@ -23,6 +23,7 @@ def decode_bytes(value: str, length: int | None = None) -> bytes:
 
 
 def canonical_json(value: dict) -> bytes:
+    """同样的JSON内容产生同样的字节，供文件头的AAD认证使用。"""
     return json.dumps(value, sort_keys=True, separators=(",", ":")).encode("utf-8")
 
 
@@ -51,7 +52,7 @@ def read_json(path: str | Path) -> dict:
 
 
 def atomic_write(path: str | Path, data: bytes, *, overwrite: bool = True) -> None:
-    """Write through a private temporary file in the destination directory."""
+    """先写私有临时文件，再一次替换目标，避免失败时留下半个文件。"""
     if len(data) > MAX_FILE_BYTES:
         raise ValueError("File is too large")
     path = Path(path)

@@ -13,6 +13,15 @@ entry for a teammate's public key. No network service is used.
 The English sections explain security choices; the Chinese guide
 below gives the complete classroom demonstration with expected results.
 
+## Grading checklist
+
+| Part | Weight | Implementation and evidence |
+| --- | --- | --- |
+| Four required blocks | 40% | Independent Argon2id verification, Argon2id key derivation, authenticated AES-GCM vault, and secrets generator; tested with wrong passwords and modified files |
+| Reasons in the README | 40% | The five answers below explain the chosen libraries, parameters, alternatives, and limits; both members must be able to defend these in their own words |
+| Honest security model | 10% | Weak passwords, keyloggers, screen viewing, memory access, deletion and rollback are explicitly outside the protection offered |
+| Readable code and a bonus | 10% | Four focused modules with comments at the crypto steps; Bonus A shares one entry using the recipient's RSA public key |
+
 ## Why these choices
 
 ### 1. Why Argon2id for the master password, not SHA-256 or AES?
@@ -170,6 +179,19 @@ Both members should explain this flow: create hashes the password and saves
 an empty encrypted vault; open validates the header, verifies the hash,
 derives the key, and checks GCM before returning entries. Every change is
 saved encrypted.
+
+## 讲解代码的顺序
+
+| 文件与入口 | 讲清楚什么 |
+| --- | --- |
+| `cli.py`：`build_parser()`、`main()` | `pm`传入的参数如何选择操作；`getpass`如何隐藏密码输入；哪些操作需要主密码 |
+| `password_manager.py`：`Vault.create()`、`Vault.open()`、`_write_vault()` | 主密码哈希用于验证；另一份盐用于派生AES密钥；整个账号字典用AES-GCM加密，文件头通过AAD认证 |
+| `sharing.py`：`generate_keypair()`、`share_entry()`、`open_share()` | 私钥口令保护私钥文件；RSA公钥封装随机AES密钥，AES-GCM加密一条记录；对应私钥才能解开 |
+| `storage.py`：`canonical_json()`、`atomic_write()` | JSON如何变成稳定字节用于认证；先写临时文件再替换，避免写失败破坏已有文件 |
+
+打开密码库的主线：**读文件 → 检查参数 → 验证主密码哈希 → 派生AES密钥 →
+验证GCM标签并解密 → 返回账号字典**。代码中的三步注释对应这条主线。
+四份`test_*.py`验证行为，演示时用`pm test`运行；它们不是密码管理器的业务代码。
 
 ## References
 

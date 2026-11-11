@@ -170,9 +170,10 @@ class VaultRegressionTests(unittest.TestCase):
         self.path.write_text(json.dumps(self.envelope(), sort_keys=True))
         self.assertEqual(Vault.open(self.path, self.master).entries, {})
 
-    def test_repeated_save_uses_fresh_salt_and_nonce(self):
+    def test_repeated_updates_use_fresh_salt_and_nonce(self):
+        self.vault.add("example", "alice", "test-account-password")
         before = self.envelope()
-        self.vault.save()
+        self.vault.add("example", "alice", "test-account-password")
         after = self.envelope()
         self.assertNotEqual(before["salt"], after["salt"])
         self.assertNotEqual(before["nonce"], after["nonce"])

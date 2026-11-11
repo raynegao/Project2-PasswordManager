@@ -1,7 +1,5 @@
 """Argon2id password verification and an AES-GCM encrypted credential vault."""
 
-from __future__ import annotations
-
 import json
 import os
 import secrets
@@ -9,7 +7,7 @@ import string
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from argon2 import PasswordHasher, extract_parameters
+from argon2 import Parameters, PasswordHasher, extract_parameters
 from argon2.exceptions import HashingError, InvalidHashError, VerificationError
 from argon2.low_level import Type, hash_secret_raw
 from cryptography.exceptions import InvalidTag
@@ -18,19 +16,16 @@ from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from storage import atomic_write, canonical_json, decode_bytes, encode_bytes, read_json
 
 VERSION = 2
-KDF_TIME_COST = 3
-KDF_MEMORY_COST = 65536
-KDF_PARALLELISM = 4
 SALT_BYTES = 16
 NONCE_BYTES = 12
-KEY_BYTES = 32
 KDF_PARAMS = {
-    "time_cost": KDF_TIME_COST,
-    "memory_cost": KDF_MEMORY_COST,
-    "parallelism": KDF_PARALLELISM,
-    "hash_len": KEY_BYTES,
+    "time_cost": 3,
+    "memory_cost": 65536,  # KiB，即64 MiB内存。
+    "parallelism": 4,
+    "hash_len": 32,
 }
 PASSWORD_HASHER = PasswordHasher(**KDF_PARAMS, salt_len=SALT_BYTES, type=Type.ID)
+HASH_PARAMS = Parameters(type=Type.ID, version=19, salt_len=SALT_BYTES, **KDF_PARAMS)
 AAD = b"Yuchen-Haitian Password Manager v2\0"
 AUTH_ERROR = "Wrong master password or the vault has been tampered with"
 
@@ -49,6 +44,7 @@ def validate_new_password(password: str) -> None:
 
 
 def derive_key(master_password: str, salt: bytes) -> bytes:
+    """主密码加独立盐，派生32字节AES密钥；密钥不写入文件。"""
     validate_new_password(master_password)
     if not isinstance(salt, bytes) or len(salt) != SALT_BYTES:
         raise ValueError("The KDF salt must be 16 bytes")
@@ -61,7 +57,7 @@ def derive_key(master_password: str, salt: bytes) -> bytes:
 
 
 def generate_password(length: int = 20) -> str:
-    """Use OS-backed randomness for every choice and the final shuffle."""
+    """用secrets选取四类字符并安全洗牌，避免可预测的random。"""
     if type(length) is not int or not 12 <= length <= 4096:
         raise ValueError("Password length must be between 12 and 4096")
     classes = (
@@ -80,27 +76,8 @@ def generate_password(length: int = 20) -> str:
 def _validate_hash(master_hash: str) -> None:
     if not isinstance(master_hash, str) or len(master_hash) > 256:
         raise ValueError("Invalid master-password hash")
-    params = extract_parameters(master_hash)
-    expected = (
-        Type.ID,
-        19,
-        SALT_BYTES,
-        KEY_BYTES,
-        KDF_TIME_COST,
-        KDF_MEMORY_COST,
-        KDF_PARALLELISM,
-    )
-    actual = (
-        params.type,
-        params.version,
-        params.salt_len,
-        params.hash_len,
-        params.time_cost,
-        params.memory_cost,
-        params.parallelism,
-    )
-    if actual != expected:
-        # Do not let an untrusted file request arbitrary Argon2 memory or CPU.
+    # 验证前限制文件中的Argon2参数，防止被改成巨大的内存或计算开销。
+    if extract_parameters(master_hash) != HASH_PARAMS:
         raise ValueError("Unsupported master-password hash parameters")
 
 
@@ -128,6 +105,7 @@ def _write_vault(
 ) -> None:
     _validate_entries(entries)
     _validate_hash(master_hash)
+    # 每次保存都生成新盐和nonce，全部账号一起加密。
     salt = os.urandom(SALT_BYTES)
     nonce = os.urandom(NONCE_BYTES)
     header = {
@@ -140,6 +118,7 @@ def _write_vault(
         "nonce": encode_bytes(nonce),
     }
     key = derive_key(master_password, salt)
+    # 文件头可公开，但作为AAD参与认证，改动头部也会使解密失败。
     ciphertext = AESGCM(key).encrypt(
         nonce, canonical_json({"entries": entries}), AAD + canonical_json(header)
     )
@@ -167,7 +146,7 @@ class Vault:
         if vault_path.exists() and not overwrite:
             raise VaultError(f"Vault already exists: {vault_path}")
         validate_new_password(master_password)
-        # PasswordHasher supplies a salt independent of the encryption salt.
+        # 主密码只存Argon2id验证串；它的盐与AES密钥派生用的盐独立。
         master_hash = PASSWORD_HASHER.hash(master_password)
         _write_vault(vault_path, master_password, master_hash, {}, overwrite=overwrite)
         return cls(vault_path, master_password, {}, master_hash)
@@ -176,6 +155,7 @@ class Vault:
     def open(cls, path: str | Path, master_password: str) -> "Vault":
         vault_path = Path(path)
         try:
+            # 1. 先检查文件结构、算法及Argon2参数，再处理密码。
             envelope = read_json(vault_path)
             if (
                 type(envelope.get("version")) is not int
@@ -206,11 +186,13 @@ class Vault:
             ciphertext = decode_bytes(envelope["ciphertext"])
             if len(ciphertext) < 16:
                 raise ValueError("Missing GCM authentication tag")
+            # 2. 验证主密码；正确后才派生AES密钥。
             PASSWORD_HASHER.verify(envelope["master_hash"], master_password)
             key = derive_key(master_password, salt)
             header = {
                 name: value for name, value in envelope.items() if name != "ciphertext"
             }
+            # 3. GCM先验证认证标签，成功后才返回账号明文。
             plaintext = AESGCM(key).decrypt(
                 nonce, ciphertext, AAD + canonical_json(header)
             )
@@ -233,14 +215,12 @@ class Vault:
             raise AuthenticationError(AUTH_ERROR) from exc
         return cls(vault_path, master_password, entries, envelope["master_hash"])
 
-    def save(self) -> None:
-        _write_vault(self.path, self.master_password, self.master_hash, self.entries)
-
     def add(self, service: str, username: str, password: str) -> None:
         entries = {
             **self.entries,
             service: {"username": username, "password": password},
         }
+        # 写入成功后再更新内存，避免写失败时内存和磁盘不一致。
         _write_vault(self.path, self.master_password, self.master_hash, entries)
         self.entries = entries
 

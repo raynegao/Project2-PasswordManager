@@ -48,6 +48,7 @@ def generate_keypair(
     if private_path.exists() or public_path.exists():
         raise VaultError("A key file already exists; choose new paths")
     key = rsa.generate_private_key(public_exponent=65537, key_size=3072)
+    # 私钥用口令加密保存；队友之间只交换公钥。
     private_pem = key.private_bytes(
         serialization.Encoding.PEM,
         serialization.PrivateFormat.PKCS8,
@@ -75,7 +76,7 @@ def share_entry(
             raise ValueError("Expected an RSA public key of at least 2048 bits")
     except (ValueError, TypeError, UnsupportedAlgorithm) as exc:
         raise VaultError("Invalid RSA public key") from exc
-    # Hybrid encryption supports entries longer than RSA's direct-message limit.
+    # RSA只加密随机AES密钥；AES-GCM加密单条记录，因此也能分享长密码。
     content_key = AESGCM.generate_key(bit_length=256)
     nonce = os.urandom(12)
     header = {
@@ -118,6 +119,7 @@ def open_share(
             or private_key.key_size < 2048
         ):
             raise ValueError("Expected an RSA private key")
+        # 先用私钥还原AES密钥，再用AES-GCM验证并解密这条分享。
         wrapped_key = decode_bytes(envelope["wrapped_key"], private_key.key_size // 8)
         content_key = private_key.decrypt(wrapped_key, _oaep())
         if len(content_key) != 32:
