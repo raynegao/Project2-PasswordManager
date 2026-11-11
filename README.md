@@ -10,101 +10,8 @@ AES-256-GCM vault key, and a secrets password generator. Bonus A encrypts one
 entry for a teammate's public key. No network service is used.
 
 **课堂演示入口：[全部 pm 命令及逐步验证](#pm-demo-guide)**。
-The English sections explain setup and security choices; the Chinese guide
+The English sections explain security choices; the Chinese guide
 below gives the complete classroom demonstration with expected results.
-
-## Click to run in VS Code
-
-Select the project's .venv Python interpreter, then open Run and Debug.
-Choose a numbered configuration and click the green play button. The command
-arguments are already supplied; enter passwords in VS Code's integrated terminal.
-Configurations 01–05 cover the main demonstration, 06–08 the sharing bonus,
-09 deletion, 10 password rotation, and 11 the full test suite.
-The demonstration uses local/presentation.vault.json. Run init to start each rehearsal.
-After extracting the ZIP on a new machine, create the environment and local/
-directory with the setup commands below before starting the demonstration.
-
-## Run
-
-Python 3.11 or newer:
-
-~~~bash
-python -m venv .venv
-# Windows PowerShell: .venv\Scripts\Activate.ps1
-# macOS/Linux: source .venv/bin/activate
-python -m pip install -r requirements.txt
-mkdir local
-
-python cli.py --vault local/demo.vault.json init
-python cli.py --vault local/demo.vault.json add github alice --generate 24
-python cli.py --vault local/demo.vault.json list
-python cli.py --vault local/demo.vault.json show github
-python cli.py --vault local/demo.vault.json remove github
-python cli.py --vault local/demo.vault.json change-master
-python cli.py generate --length 24
-~~~
-
-Without --generate, add prompts for an existing account password.
-Commands get, delete, and gen alias show, remove, and generate.
-The --vault option goes before the command; its default is vault.json.
-Each command unlocks the vault again. Password prompts use getpass and do
-not echo in a normal terminal.
-
-### Short commands in VS Code's terminal
-
-On macOS/Linux, enter this line separately and press Enter to define pm for
-the current terminal. It selects the same vault as the Run and Debug menu:
-
-~~~bash
-alias pm='.venv/bin/python cli.py --vault local/presentation.vault.json'
-~~~
-
-Every numbered Run and Debug action has a CLI equivalent:
-
-| Action | Short command |
-| --- | --- |
-| 01 Reset all demo data and create the vault | pm init |
-| 02 Add GitHub with a generated password | pm add github demo-user --generate 24 |
-| 03 List entries | pm list |
-| 04 Retrieve GitHub | pm get github |
-| 05 Generate a 24-character password | pm gen --length 24 |
-| 06 Generate a recipient key pair | pm keygen |
-| 07 Share GitHub | pm share github |
-| 08 Decrypt the share | pm unshare |
-| 09 Delete GitHub | pm delete github |
-| 10 Change the master password | pm change-master |
-| 11 Run the full test suite | pm test |
-
-To choose the account password yourself, use pm add github alice instead.
-The short bonus commands default to local/presentation-private.pem,
-local/presentation-public.pem, and local/presentation.share.json. Explicit
-key and output paths remain available as shown in the bonus example below.
-If you already use a pm alias with a different --vault path, short commands
-continue to use that vault; the Run and Debug menu selects its own configured path.
-
-For classroom demonstrations, init resets the selected vault and **all contents
-of local/ in the terminal's current directory**, including other demo vaults,
-private/public keys, share files, and nested folders. It asks for a new master
-password twice and does not ask for the old one. After successful initialization,
-local/ contains only the new selected vault if its path is inside local/.
-Code and the virtual environment are outside the cleanup scope.
-
-Invalid or cancelled password input leaves the old files intact. During creation,
-the old local/ is temporarily moved aside; a creation failure or interruption
-restores it. On success the old demo files are removed. This discards their
-contents rather than recovering them. An explicitly selected vault outside
-local/ is also replaced; other files outside local/ are kept.
-
-Master passwords and private-key passphrases require at least 12 characters.
-Generated passwords accept lengths 12–4096 and include lowercase, uppercase,
-digits, and symbols. Existing account passwords may be shorter; that does
-not make them strong. Commands that retrieve or generate passwords print
-them, so use a private terminal.
-
-Keep generated files in the Git-ignored local/ directory. The default vault,
-*.vault.json, *.pem, *.share.json, environments, and temporary files are also
-ignored; arbitrary custom paths are not automatically safe to commit.
-A Docker allowlist excludes vaults, keys, and local environments from builds.
 
 ## Why these choices
 
@@ -195,18 +102,10 @@ Generate the key pair once per rehearsal. keygen and share refuse existing
 paths; use --out with a new path for another share within the same rehearsal.
 Starting again with init removes the old keys and shares in local/ too.
 
-A local demonstration using the vault above:
-
-~~~bash
-python cli.py keygen --private local/recipient-private.pem --public local/recipient-public.pem
-python cli.py --vault local/demo.vault.json add school alice --generate 24
-python cli.py --vault local/demo.vault.json share school --public-key local/recipient-public.pem --out local/school.share.json
-python cli.py unshare local/school.share.json --private-key local/recipient-private.pem
-~~~
-
-Only school is shared. The sender gives the encrypted share file to the
-recipient, who uses their private key and its passphrase; the sender's master
-password is not needed. These commands do not send messages.
+The [pm demonstration guide](#pm-demo-guide) covers each sharing command and
+its expected result. Only the selected entry is shared. The sender gives the
+encrypted share file to the recipient, who uses their private key and its
+passphrase; the sender's master password is not needed. These commands do not send messages.
 
 We use hybrid encryption: a fresh random AES-256-GCM key encrypts the entry;
 RSA-OAEP with SHA-256 encrypts that key. Direct RSA has a small message limit,
@@ -239,8 +138,7 @@ rejected without rewriting it; init deliberately replaces the selected file
 with a fresh version 2 vault instead. Automatic data migration is not included.
 
 ~~~bash
-python cli.py test
-# Equivalent: python -m unittest -v
+pm test
 
 # Alternative:
 docker build -t project2-password-manager .
@@ -290,9 +188,8 @@ saved encrypted.
 
 ### 0. 准备终端和 pm 快捷命令
 
-在 VS Code 打开项目文件夹，选择项目的 `.venv` Python 解释器，
-再点击“终端 → 新建终端”。终端当前位置应是包含 `cli.py` 的项目根目录。
-新电脑先完成上方 Run 中的虚拟环境与依赖安装；已有 `.venv` 时无需重复创建。
+在 VS Code 打开已配置好 `.venv` 和依赖的项目文件夹，
+点击“终端 → 新建终端”。终端当前位置应是包含 `cli.py` 的项目根目录。
 
 macOS/Linux 先运行下面这行，确保演示文件夹存在：
 
@@ -317,10 +214,10 @@ alias pm='.venv/bin/python cli.py --vault local/presentation.vault.json'
 pm --help
 ~~~
 
-上面的别名与 VS Code“运行和调试”菜单使用同一个 `presentation` 密码库。
+上面的别名默认使用 `local/presentation.vault.json` 密码库。
 如果你之前在使用 `local/demo1.vault.json`，继续演示那份库时，
 把别名中的路径改成 `local/demo1.vault.json` 即可。不同文件是不同密码库；
-切换别名不会移动账号，也不会更改 VS Code 菜单中的路径。
+切换别名不会移动账号。
 
 Windows PowerShell 可以在项目目录定义同样用途的函数：
 
@@ -413,7 +310,6 @@ pm add github alice --generate 24
 这个版本只问主密码，随后显示 `Saved: github` 和 `Generated password: ...`。
 运行 `pm get github`，应取回同一个生成的账户密码。
 再次添加同一个 `github` 会更新其用户名和密码，不会新增第二条同名记录。
-VS Code 第02项采用自动生成密码，用户名预设为 `demo-user`。
 
 ### 3. 查看账号和密码
 
@@ -608,11 +504,7 @@ OK
 ~~~
 
 `OK` 表示全部通过。出现 `FAIL`、`ERROR` 或 `FAILED` 就表示存在未通过的测试，
-应查看对应测试名和错误信息。如果只看到少量测试，确认运行的是 `pm test`，
-而不是编辑器右上角只运行某一个测试文件的按钮。
-
-在不使用别名时，也可以运行 `python cli.py test` 或 `python -m unittest -v`；
-使用当前选中的项目环境。macOS 可以直接运行 `.venv/bin/python cli.py test`。
+应查看对应测试名和错误信息。完整测试统一使用 `pm test` 运行。
 
 ### 其他参数与常见问题
 
@@ -642,7 +534,7 @@ pm unshare local/teammate.share.json --private-key local/teammate-private.pem
 按回车后再输入 `pm` 命令。项目文件夹或 Python 解释器选择不会自动保存这个别名。
 
 **找不到 `cli.py` 或 `.venv/bin/python`：**确认 VS Code 打开的是项目文件夹，
-终端也在项目根目录；新电脑按上方 Run 创建环境并安装依赖。
+终端也在项目根目录，并确认项目已配置 `.venv` 和 `requirements.txt` 中的依赖。
 
 **密码太短或两次不一致：**至少12个字符，两次输入相同。
 错误或取消输入不会先清空已有库；按 `Control+C` 可以取消当前命令。
